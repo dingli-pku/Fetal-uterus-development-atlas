@@ -1,0 +1,95 @@
+# ===============================================================
+# CytoTRACE2 analysis for epithelial (EPI) subset
+# Dataset: snRNA-seq
+# Environment: R
+# ===============================================================
+
+# 0) Load Seurat object
+load("/path/to/EPI_cellType.RData")  # Loads object 'EPI'
+seu <- EPI
+seu = JoinLayers(seu)
+
+# Set cell identities and perform random downsampling to 500 cells
+Idents(seu) <- 'cell_sub_type'
+seu <- subset(seu, downsample = 500)
+
+library(CytoTRACE2)
+
+# ---------------------------------------------------------------
+# 1) Prepare annotation table
+# ---------------------------------------------------------------
+annotation <- seu@meta.data
+stopifnot("cell_sub_type" %in% colnames(annotation))
+
+annotation2 <- data.frame(
+  phenotype = annotation$cell_sub_type,
+  row.names = rownames(annotation),
+  check.names = FALSE
+)
+
+# ---------------------------------------------------------------
+# 2) Extract expression matrix
+# ---------------------------------------------------------------
+library(Seurat)
+library(Matrix)
+
+# Use raw count matrix (genes as rows, cells as columns)
+expression_data <- GetAssayData(seu, assay = DefaultAssay(seu), slot = "counts")
+
+# ---------------------------------------------------------------
+# 3) Convert matrix to data.frame format for CytoTRACE2
+# ---------------------------------------------------------------
+expr_df <- as.data.frame(as.matrix(expression_data))
+message(sprintf("Cleaned matrix: %d genes × %d cells", nrow(expr_df), ncol(expr_df)))
+
+# ---------------------------------------------------------------
+# 4) Run CytoTRACE2
+# ---------------------------------------------------------------
+library(CytoTRACE2)
+
+# Match available parameter names in current CytoTRACE2 version
+sig <- names(formals(CytoTRACE2::cytotrace2))
+cand <- list(
+  species        = "human",
+  n_subsamples   = 1,
+  subsample_size = ncol(expr_df),
+  n_cores        = 1,
+  fast           = FALSE,
+  subsamples     = 1,
+  nSubsamples    = 1,
+  subsample.size = ncol(expr_df),
+  subsampleCells = ncol(expr_df),
+  cores          = 1,
+  nCores         = 1,
+  num.cores      = 1,
+  fastMode       = FALSE,
+  use_fast       = FALSE
+)
+pars <- cand[intersect(names(cand), sig)]
+
+# Execute CytoTRACE2
+res <- do.call(CytoTRACE2::cytotrace2, c(list(expr_df), pars))
+
+# ---------------------------------------------------------------
+# 5) Align sample order between expression and annotation tables
+# ---------------------------------------------------------------
+common <- intersect(colnames(expr_df), rownames(annotation2))
+expr_df     <- expr_df[, common, drop = FALSE]
+annotation2 <- annotation2[common, , drop = FALSE]
+stopifnot(identical(colnames(expr_df), rownames(annotation2)))
+
+# ---------------------------------------------------------------
+# 6) Generate CytoTRACE2 visualizations
+# ---------------------------------------------------------------
+plots <- CytoTRACE2::plotData(
+  cytotrace2_result = res,
+  annotation        = annotation2,  # phenotype column corresponds to Endo_new subtype
+  expression_data   = expr_df
+)
+
+# Display main plots
+plots$CytoTRACE2_UMAP
+plots$CytoTRACE2_Boxplot_byPheno
+plots$CytoTRACE2_Potency_UMAP
+plots$CytoTRACE2_Relative_UMAP
+plots$Phenotype_UMAP

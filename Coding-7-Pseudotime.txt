@@ -1,0 +1,93 @@
+# ===============================================================
+# Correlation and hierarchical clustering of cell-type mean expression
+# Dataset: snRNA-seq
+# Environment: R
+# ===============================================================
+
+# Load required packages
+library(Seurat)
+library(monocle3)
+library(SeuratWrappers)
+library(ggplot2)
+library(dplyr)
+library(Matrix)
+library(patchwork)
+
+# ---------------------------------------------------------------
+# 1) Load preprocessed Seurat objects for cell subtype
+# ---------------------------------------------------------------
+load("path/to/subtype_obj.Rdata")
+
+# ---------------------------------------------------------------
+# 2) Downstream analysis
+# ---------------------------------------------------------------
+Idents(subtype_obj) <- "cell_subtype"
+table(Idents(subtype_obj))
+
+# ---------------------------------------------------------------
+# 3) Build Monocle3 cell_data_set object
+# ---------------------------------------------------------------
+expression_matrix <- subtype_obj@assays$mnn.reconstructed@data
+cell_metadata <- data.frame(subtype_obj@meta.data)
+gene_annotation <- data.frame(gene_short_name = rownames(expression_matrix))
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+
+# Preprocess: equivalent to NormalizeData + ScaleData + RunPCA
+cds <- preprocess_cds(cds, num_dim = 50)
+plot_pc_variance_explained(cds)
+
+# Dimension reduction
+cds <- reduce_dimension(cds, preprocess_method = "PCA")
+
+# Initial visualization
+plot_cells(cds)
+plot_cells(cds, reduction = 'UMAP', color_cells_by = 'cell_subtype') + ggtitle('cds.umap')
+
+# ---------------------------------------------------------------
+# 4) Align UMAP embeddings between Seurat and Monocle3
+# ---------------------------------------------------------------
+
+cds.embed <- cds@int_colData$reducedDims$UMAP
+int.embed <- Embeddings(subtype_obj, reduction = 'umap.mnn')
+int.embed <- int.embed[rownames(cds.embed),]
+cds@int_colData$reducedDims$UMAP <- int.embed
+
+plot_cells(cds, reduction = 'UMAP', color_cells_by = 'cell_subtype') + ggtitle('int.umap')
+
+# ---------------------------------------------------------------
+# 5) Clustering and trajectory inference
+# ---------------------------------------------------------------
+cds <- cluster_cells(cds)
+plot_cells(cds, color_cells_by = "partition")
+
+# Learn trajectory graph
+cds <- learn_graph(cds, close_loop = FALSE)
+
+plot_cells(cds, color_cells_by = "cell_subtype",
+           label_groups_by_cluster = FALSE,
+           label_leaves = FALSE,
+           label_branch_points = FALSE,
+           group_label_size = 4)
+
+plot_cells(cds, color_cells_by = "cell_subtype",
+           label_groups_by_cluster = FALSE,
+           label_leaves = TRUE,
+           label_branch_points = TRUE,
+           graph_label_size = 4)
+
+# ---------------------------------------------------------------
+# 6) Order cells and extract pseudotime
+# ---------------------------------------------------------------
+cds <- order_cells(cds)
+
+p <- plot_cells(cds, color_cells_by = "pseudotime",
+                label_cell_groups = FALSE,
+                label_leaves = FALSE,
+                label_branch_points = FALSE)
+p
+
+# Extract pseudotime values
+pseudotime_values <- monocle3::pseudotime(cds)

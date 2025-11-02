@@ -1,0 +1,29 @@
+# ===============================================================
+# Correlation and hierarchical clustering of cell-type mean expression
+# Dataset: snRNA-seq
+# Environment: R
+# ===============================================================
+
+# ---------------------------------------------------------------
+# 1) Load averaged expression matrix by cell type
+# ---------------------------------------------------------------
+
+pseudobulk_matrix <- read.table(
+  "/path/to/EC_pseudobulk.csv",
+  header = TRUE,
+  row.names = 1,
+  sep = ","
+)
+
+# Apply transformation to each row
+cluster.matrix.n <- t(pseudobulk_matrix)
+
+# ---------------------------------------------------------------
+# 2) Compute pairwise correlation matrix between cell types
+# ---------------------------------------------------------------
+cluster.matrix.n.cor <- cor(cluster.matrix.n)
+
+# ---------------------------------------------------------------
+# 3) Perform hierarchical clustering based on correlation distance
+# ---------------------------------------------------------------
+plot(hclust(d = dist(1 - cluster.matrix.n.cor)))

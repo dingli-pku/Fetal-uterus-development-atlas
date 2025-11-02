@@ -1,0 +1,108 @@
+# ===============================================================
+# Spatial transcriptomic analysis using STAGATE
+# Dataset: BMKMANU S1000/S2000
+# Environment: Python
+# ===============================================================
+
+import warnings
+warnings.filterwarnings("ignore")
+
+import pandas as pd
+import numpy as np
+import scanpy as sc
+import matplotlib.pyplot as plt
+import os, sys
+import STAGATE
+import anndata
+
+# ---------------------------------------------------------------
+# 1) Load preprocessed AnnData object
+# ---------------------------------------------------------------
+adata = anndata.read("/path/to/S1000_sample.h5ad")
+adata
+
+# Check cell identifiers
+adata.obs_names
+
+# ---------------------------------------------------------------
+# 2) Prepare spatial coordinates
+# ---------------------------------------------------------------
+# Extract spatial coordinates from metadata
+coor_df = adata.obs.loc[:, ['x', 'y']]
+coor_df = coor_df.loc[adata.obs_names, ['y', 'x']]  # ensure correct axis order
+
+# Assign spatial coordinates to AnnData object
+adata.obsm["spatial"] = coor_df.to_numpy()
+
+# ---------------------------------------------------------------
+# 3) Quality control and filtering
+# ---------------------------------------------------------------
+sc.pp.calculate_qc_metrics(adata, inplace=True)
+
+plt.rcParams["figure.figsize"] = (2, 6)
+sc.pl.embedding(adata, basis="spatial", color="n_genes_by_counts", show=False)
+plt.title("")
+plt.axis('off')
+
+# Filter genes expressed in at least 50 cells
+sc.pp.filter_genes(adata, min_cells=50)
+print('After filtering:', adata.shape)
+
+# ---------------------------------------------------------------
+# 4) Normalization and feature selection
+# ---------------------------------------------------------------
+sc.pp.highly_variable_genes(adata, n_top_genes=3000)
+sc.pp.normalize_total(adata, target_sum=1e4)
+sc.pp.log1p(adata)
+
+# ---------------------------------------------------------------
+# 5) Construct spatial network for STAGATE
+# ---------------------------------------------------------------
+STAGATE.Cal_Spatial_Net(adata, rad_cutoff=50)
+STAGATE.Stats_Spatial_Net(adata)
+
+# ---------------------------------------------------------------
+# 6) Train STAGATE model
+# ---------------------------------------------------------------
+import tensorflow.compat.v1 as tf
+
+adata = STAGATE.train_STAGATE(adata, alpha=0.5)
+
+# ---------------------------------------------------------------
+# 7) Save trained model results
+# ---------------------------------------------------------------
+adata.raw.var.rename(columns={'_index': 'my_index'}, inplace=True)
+adata.write('/path/to/S1000_sample_stagate.h5ad')
+
+# ---------------------------------------------------------------
+# 8) Post-STAGATE clustering and visualization
+# ---------------------------------------------------------------
+import scanpy as sc
+import anndata
+import matplotlib.pyplot as plt
+
+# Reload STAGATE output
+adata = anndata.read("/path/to/S1000_sample_stagate.h5ad")
+
+# Compute neighborhood graph using STAGATE embeddings
+sc.pp.neighbors(adata, use_rep='STAGATE')
+sc.tl.umap(adata)
+
+# Perform Louvain clustering
+sc.tl.louvain(adata, resolution=2)
+
+# Spatial and UMAP visualization
+plt.rcParams["figure.figsize"] = (10, 24)
+sc.pl.embedding(adata, basis="spatial", color="louvain", s=80, show=False, title='STAGATE')
+plt.axis('off')
+
+plt.rcParams["figure.figsize"] = (6, 6)
+sc.pl.umap(adata, color='louvain', title='STAGATE')
+
+# ---------------------------------------------------------------
+# 9) Save final processed object and metadata
+# ---------------------------------------------------------------
+adata.write('/path/to/S1000_sample_stagate_result.h5ad')
+
+# Export metadata table to CSV for downstream analysis
+adata.obs.to_csv('/path/to/S1000_sample_metatable.csv', index=True)

@@ -1,0 +1,70 @@
+# ===============================================================
+# snRNA-seq main cell type analysis
+# Dataset: snRNA-seq
+# Environment: R
+# ===============================================================
+
+# ---------------------------------------------------------------
+# 1) Merge Seurat objects from two datasets
+# ---------------------------------------------------------------
+
+sn_all = JoinLayers(fetal_all, adult_all)
+
+# Split RNA assay by sample identity for independent normalization
+sn_all[["RNA"]] <- split(sn_all[["RNA"]], f = sn_all$orig.ident)
+
+# Standard preprocessing workflow
+sn_all <- NormalizeData(sn_all)
+sn_all <- FindVariableFeatures(sn_all)
+sn_all <- ScaleData(sn_all)
+
+# Perform PCA and visualize explained variance
+sn_all <- RunPCA(sn_all)
+ElbowPlot(sn_all, ndims = 60)
+
+# Build neighbor graph and perform clustering
+sn_all <- FindNeighbors(sn_all, dims = 1:20)
+sn_all <- FindClusters(sn_all, resolution = 1)
+
+# Run UMAP for visualization
+sn_all <- RunUMAP(sn_all, dims = 1:20)
+
+# Visualize cells by sample origin or cell type
+DimPlot(sn_all, label = TRUE, group.by = 'orig')
+DimPlot(sn_all, label = TRUE)
+DimPlot(sn_all, label = TRUE, group.by = 'cell_type')
+
+
+# ---------------------------------------------------------------
+# 2) Perform MNN integration for batch correction
+# ---------------------------------------------------------------
+sn_all <- IntegrateLayers(
+  object = sn_all,
+  method = FastMNNIntegration,
+  new.reduction = "integrated.mnn",
+  verbose = FALSE
+)
+
+# Rebuild neighbor graph and clusters using the integrated reduction
+sn_all <- FindNeighbors(sn_all, reduction = "integrated.mnn", dims = 1:20)
+sn_all <- FindClusters(sn_all, resolution = 1, cluster.name = "mnn_clusters")
+
+# UMAP visualization based on MNN-corrected embeddings
+sn_all <- RunUMAP(
+  sn_all,
+  reduction = "integrated.mnn",
+  dims = 1:20,
+  reduction.name = "umap.mnn"
+)
+
+# Plot UMAP by cell type, split by original sample identity
+DimPlot(
+  sn_all,
+  reduction = "umap.mnn",
+  group.by = "cell_type",
+  split.by = 'orig',
+  combine = FALSE,
+  label.size = 5,
+  raster = FALSE,
+  label = TRUE
+)

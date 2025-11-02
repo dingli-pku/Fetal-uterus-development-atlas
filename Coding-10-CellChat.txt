@@ -1,0 +1,125 @@
+# ===============================================================
+# Cellchat analysis for cell-cell interaction
+# Dataset: snRNA-seq
+# Environment: R
+# ===============================================================
+
+
+# ---------------------------------------------------------------
+# 1) Get ligand and receptor information
+# ---------------------------------------------------------------
+
+library(CellChat)
+
+# Load human CellChat database
+CellChatDB <- CellChatDB.human
+
+# Inspect database structure
+str(CellChatDB)
+
+# Display first 10 pathway names
+unique(CellChatDB$interaction$pathway_name)[1:10]
+
+# View all ligand–receptor pairs and their associated pathways
+subset(CellChatDB$interaction)[, c("pathway_name", "ligand", "receptor")]
+
+# Count the number of ligand–receptor pairs in each pathway
+table(CellChatDB$interaction$pathway_name)
+
+# Export the pathway–ligand–receptor table
+write.table(
+  subset(CellChatDB$interaction)[, c("pathway_name", "ligand", "receptor")],
+  "/path/to/cellChat_list.txt",
+  sep = "\t", quote = FALSE
+)
+
+# ---------------------------------------------------------------
+# 2) Initialize CellChat object
+# ---------------------------------------------------------------
+
+Idents(cells_obj) = 'celltype'
+
+library(patchwork)
+
+# Create CellChat object based on cell type annotation
+cellchat <- createCellChat(object = cells_obj, group.by = "celltype", assay = "RNA")
+
+# Load human ligand–receptor database
+CellChatDB <- CellChatDB.human
+
+# Inspect database content
+dplyr::glimpse(CellChatDB$interaction)
+
+# ---------------------------------------------------------------
+# 3) Select subset of signaling database for analysis
+# ---------------------------------------------------------------
+
+# Use “Secreted Signaling” category to focus on soluble ligands
+CellChatDB.use <- subsetDB(CellChatDB, search = "Secreted Signaling", key = "annotation")
+
+# Assign database to CellChat object
+cellchat@DB <- CellChatDB.use
+
+# Subset expression data for signaling genes to reduce computation
+cellchat <- subsetData(cellchat)
+
+# ---------------------------------------------------------------
+# 4) Identify overexpressed signaling genes and interactions
+# ---------------------------------------------------------------
+
+future::plan("multisession", workers = 5)  # Enable parallel processing
+
+cellchat <- identifyOverExpressedGenes(cellchat)
+
+ptm = Sys.time()
+cellchat <- identifyOverExpressedInteractions(cellchat)
+execution.time = Sys.time() - ptm
+print(as.numeric(execution.time, units = "secs"))
+
+
+# ---------------------------------------------------------------
+# 5) Compute cell–cell communication probabilities
+# ---------------------------------------------------------------
+
+ptm = Sys.time()
+cellchat <- computeCommunProb(cellchat, type = "truncatedMean", trim = 0.1)
+execution.time = Sys.time() - ptm
+print(as.numeric(execution.time, units = "secs"))
+
+# Filter out weak or low-confidence communications
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+
+# Compute communication probabilities at the pathway level
+cellchat <- computeCommunProbPathway(cellchat)
+
+# Aggregate signaling networks
+cellchat <- aggregateNet(cellchat)
+
+execution.time = Sys.time() - ptm
+print(as.numeric(execution.time, units = "secs"))
+
+# ---------------------------------------------------------------
+# 6) Visualization of overall communication network
+# ---------------------------------------------------------------
+
+ptm = Sys.time()
+groupSize <- as.numeric(table(cellchat@idents))
+
+par(mfrow = c(1, 2), xpd = TRUE)
+netVisual_circle(
+  cellchat@net$count,
+  vertex.weight = groupSize,
+  weight.scale = TRUE,
+  label.edge = FALSE,
+  title.name = "Number of interactions"
+)
+netVisual_circle(
+  cellchat@net$weight,
+  vertex.weight = groupSize,
+  weight.scale = TRUE,
+  label.edge = FALSE,
+  title.name = "Interaction weights/strength"
+)
+execution.time = Sys.time() - ptm
+print(as.numeric(execution.time, units = "secs"))
+

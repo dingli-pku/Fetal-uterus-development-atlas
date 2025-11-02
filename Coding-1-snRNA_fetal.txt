@@ -1,0 +1,69 @@
+# ===============================================================
+# snRNA-seq main cell type analysis
+# Dataset: snRNA-seq
+# Environment: R
+# ===============================================================
+
+# ---------------------------------------------------------------
+# 1) Merge Seurat objects from different time points
+# ---------------------------------------------------------------
+# Load Seurat package
+library(Seurat)
+
+# Merge Seurat objects from all developmental stages
+fetal_all = merge(fetal_18w, fetal_20w, fetal_22w, fetal_23w, fetal_24w, fetal_25w, fetal_26w)
+
+# Standard Seurat preprocessing
+fetal_all <- NormalizeData(fetal_all)
+fetal_all <- FindVariableFeatures(fetal_all)
+fetal_all <- ScaleData(fetal_all)
+
+# Run PCA and visualize variance explained
+fetal_all <- RunPCA(fetal_all)
+ElbowPlot(fetal_all, ndims = 60)
+
+# Construct neighborhood graph and perform clustering
+fetal_all <- FindNeighbors(fetal_all, dims = 1:15)
+fetal_all <- FindClusters(fetal_all, resolution = 1)
+
+# UMAP visualization by cell type
+fetal_all <- RunUMAP(fetal_all, dims = 1:15)
+DimPlot(fetal_all, label = TRUE, group.by = 'cell_type')
+
+
+# ---------------------------------------------------------------
+# 2) Perform MNN integration for batch correction
+# ---------------------------------------------------------------
+fetal_all <- IntegrateLayers(
+  object = fetal_all,
+  method = FastMNNIntegration,
+  new.reduction = "integrated.mnn",
+  verbose = FALSE
+)
+
+# Build neighbor graph and cluster in integrated space
+fetal_all <- FindNeighbors(fetal_all, reduction = "integrated.mnn", dims = 1:15)
+fetal_all <- FindClusters(fetal_all, resolution = 1, cluster.name = "mnn_clusters")
+
+# Run UMAP based on MNN-corrected embeddings
+fetal_all = RunUMAP(
+  fetal_all,
+  dims = 1:15,
+  n.neighbors = 30,
+  min.dist = 0.3,
+  metric = "cosine",
+  seed.use = 42,
+  reduction.name = "umap.mnn"
+)
+
+# Plot UMAP by cell type, split by sample origin
+DimPlot(
+  fetal_all,
+  reduction = "umap.mnn",
+  group.by = "cell_type",
+  split.by = 'orig',
+  combine = FALSE,
+  label.size = 5,
+  raster = FALSE,
+  label = TRUE
+)

@@ -1,0 +1,43 @@
+# ===============================================================
+# Correlation and hierarchical clustering of cell-type mean expression
+# Dataset: snRNA-seq
+# Environment: R
+# ===============================================================
+
+# seurat_obj is the seurat object with pseudotime value.
+
+# ---------------------------------------------------------------
+# 1) Extract pseudotime, gene expression, and cell type information
+# ---------------------------------------------------------------
+plot_data <- FetchData(
+  seurat_obj,
+  vars = c("pseudotime", genes_select, "cell_type")
+)
+
+# ---------------------------------------------------------------
+# 2) Convert data to long format for ggplot visualization
+# ---------------------------------------------------------------
+plot_data_long <- plot_data %>%
+  pivot_longer(
+    cols = genes_select,   # Target genes for plotting
+    names_to = "gene",
+    values_to = "expression"
+  )
+
+# ---------------------------------------------------------------
+# 3) Plot gene expression dynamics along pseudotime using GAM smoothing
+# ---------------------------------------------------------------
+p = ggplot(plot_data_long, aes(x = pseudotime, y = expression, color = gene)) +
+  geom_smooth(
+    method = "gam",                  # Fit using Generalized Additive Model
+    formula = y ~ s(x, bs = "cr"),   # Cubic regression spline
+    se = FALSE,                      
+    linewidth = 1
+  ) +
+  labs(x = "Pseudotime", y = "Expression") +
+  scale_color_viridis_d() +          # Use viridis color palette
+  theme_minimal()
+
+# Display the plot
+p
+

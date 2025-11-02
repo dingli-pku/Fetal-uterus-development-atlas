@@ -1,0 +1,101 @@
+# ===============================================================
+# Visualization of spatial cell-type distribution with boundaries
+# Dataset: BMKMANU S1000/S2000
+# Environment: Python
+# ===============================================================
+
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+from scipy.ndimage import find_objects
+from PIL import Image
+
+# ---------------------------------------------------------------
+# 1) Load input data (cell ID matrix)
+# ---------------------------------------------------------------
+my = np.load('/path/to/cells.npy')
+height, width = my.shape
+
+# ---------------------------------------------------------------
+# 2) Load cell-type mapping table
+# ---------------------------------------------------------------
+# Read mapping file (cell ID → cell type, from seurat metable)
+infile = open("/path/to/metatable.txt", 'r').read().split('\n')
+remDic = {}
+for line in infile[1:]:  # skip header
+    if line:
+        L = line.replace('"', '').split('\t')
+        remDic[int(L[0].split('_')[1])] = int(L[-1])
+
+# Define color mapping for each cell type
+# 0 for background; 11 for boundary
+colDic = {0: '#C1C1C1', 1: '#BF502A', 2: '#BF502A', 11: '#000000'}
+
+# Convert hex color to RGB tuple
+def RGB(color_hex):
+    return tuple(int(color_hex[i:i+2], 16) for i in range(1, 7, 2))
+
+# Pre-convert all hex colors to RGB format
+colDic = {k: RGB(v) for k, v in colDic.items()}
+
+# ---------------------------------------------------------------
+# 3) Generate color matrix based on cell type
+# ---------------------------------------------------------------
+# Create a blank white RGB canvas
+color_matrix = np.full((height, width, 3), (255, 255, 255), dtype=np.uint8)
+
+# Map cell IDs to types
+remap_array = np.vectorize(lambda cid: remDic.get(cid, 0))(my)
+
+# Assign gray color to unclassified cells
+gray_mask = (remap_array == 0) & (my != 0)
+color_matrix[gray_mask] = colDic[0]
+
+# Assign predefined colors for each detected cell type
+cell_mask = (remap_array != 0) & (my != 0)
+unique_types = np.unique(remap_array[cell_mask])
+for t in unique_types:
+    mask = remap_array == t
+    color_matrix[mask] = colDic.get(t, (255, 255, 255))
+
+# ---------------------------------------------------------------
+# 4) Compute boundary mask from cell segmentation
+# ---------------------------------------------------------------
+def masks_to_outlines(masks):
+    """Extracts object boundaries from a labeled mask."""
+    if masks.ndim > 3 or masks.ndim < 2:
+        raise ValueError('masks_to_outlines requires 2D or 3D input')
+    outlines = np.zeros(masks.shape, bool)
+
+    if masks.ndim == 3:
+        for i in range(masks.shape[0]):
+            outlines[i] = masks_to_outlines(masks[i])
+        return outlines
+    else:
+        slices = find_objects(masks.astype(int))
+        for i, si in enumerate(slices):
+            if si is not None:
+                sr, sc = si
+                mask = (masks[sr, sc] == (i + 1)).astype(np.uint8)
+                contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+                pvc, pvr = np.concatenate(contours[-2], axis=0).squeeze().T
+                vr, vc = pvr + sr.start, pvc + sc.start
+                outlines[vr, vc] = 1
+        return outlines
+
+# Generate boundary mask
+my2 = masks_to_outlines(my)
+boundary_mask = my2.astype(bool)
+
+# ---------------------------------------------------------------
+# 5) Overlay black boundaries on the color matrix
+# ---------------------------------------------------------------
+color_matrix[boundary_mask] = colDic[11]
+
+# ---------------------------------------------------------------
+# 6) Save final image
+# ---------------------------------------------------------------
+image = Image.fromarray(color_matrix, mode='RGB')
+image.save('/path/to/cell_with_boundary_all_fast_new.png')
+
+print("Done! Image saved successfully.")
