@@ -31,8 +31,6 @@ The suffixes `_epi` and `_stromal` identify epithelial and stromal subsets. Both
 | 22 | [`cellNewBin_22w_merge_clean__metadata.tsv`](STAGATE/cellNewBin_22w_merge_clean__metadata.tsv) | 98,853 |
 | 26 | [`cellNewBin_26w_merge_clean__metadata.tsv`](STAGATE/cellNewBin_26w_merge_clean__metadata.tsv) | 209,246 |
 
-The week 23 export is missing because `cellNewBin_23w_merge_clean.Rdata` could not be located.
-
 ## Reading the tables
 
 Each row in the new TSVs represents one cell in the source Seurat object. Use `cell_id` to match rows by Seurat cell name within the corresponding sample. Where present, `id` is a separate annotation field carried over from the source. The available columns vary across weeks and objects.
